@@ -77,7 +77,8 @@ def get_comments():
         for c in q.order_by(Comment.timestamp.desc()).all()
     ])
 
-if __name__ == "__main__":
+# 🔁 Fonction spéciale utilisée par Gunicorn sur Render
+def create_app():
     with app.app_context():
         db.create_all()
-    app.run(debug=True)
+    return app
