@@ -7,40 +7,53 @@ Created on Wed May 14 11:47:15 2025
 """
 
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import json
 import os
-from datetime import datetime
 
 app = Flask(__name__)
+CORS(app)
+
 COMMENTS_FILE = "comments.json"
 
-def charger_commentaires():
+# Charger les commentaires depuis le fichier
+def load_comments():
     if os.path.exists(COMMENTS_FILE):
         with open(COMMENTS_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+            try:
+                return json.load(f)
+            except json.JSONDecodeError:
+                return []
     return []
 
-def sauvegarder_commentaires(commentaires):
+# Sauvegarder les commentaires dans le fichier
+def save_comments(data):
     with open(COMMENTS_FILE, "w", encoding="utf-8") as f:
-        json.dump(commentaires, f, ensure_ascii=False, indent=2)
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
-@app.route("/comments", methods=["GET", "POST"])
-def comments():
-    commentaires = charger_commentaires()
+@app.route("/comments", methods=["GET"])
+def get_comments():
+    type_graphique = request.args.get("type")
+    gp = request.args.get("gp")
+    cible = request.args.get("cible")
+    comments = load_comments()
+    filtres = [
+        c for c in comments
+        if c["type_graphique"] == type_graphique and c["grand_prix"] == gp and str(c["cible"]) == str(cible)
+    ]
+    return jsonify(filtres)
 
-    if request.method == "GET":
-        type_graph = request.args.get("type")
-        gp = request.args.get("gp")
-        cible = request.args.get("cible")
-        filtres = [
-            c for c in commentaires
-            if c["type_graphique"] == type_graph and c["grand_prix"] == gp and str(c["cible"]) == str(cible)
-        ]
-        return jsonify(filtres)
-
-    elif request.method == "POST":
+@app.route("/comments", methods=["POST"])
+def post_comment():
+    try:
         data = request.get_json()
-        data["timestamp"] = datetime.utcnow().isoformat()
-        commentaires.append(data)
-        sauvegarder_commentaires(commentaires)
-        return jsonify({"message": "Commentaire enregistré"}), 201
+        all_comments = load_comments()
+        data["timestamp"] = request.headers.get("Date", "")
+        all_comments.append(data)
+        save_comments(all_comments)
+        return jsonify({"success": True}), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+if __name__ == "__main__":
+    app.run(debug=True)
