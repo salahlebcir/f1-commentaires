@@ -7,78 +7,40 @@ Created on Wed May 14 11:47:15 2025
 """
 
 from flask import Flask, request, jsonify
-from flask_cors import CORS
-from models import db, User, Comment
-import hashlib
+import json
+import os
 from datetime import datetime
 
 app = Flask(__name__)
-CORS(app)
+COMMENTS_FILE = "comments.json"
 
-app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///database.db"
-app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-db.init_app(app)
+def charger_commentaires():
+    if os.path.exists(COMMENTS_FILE):
+        with open(COMMENTS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return []
 
-@app.route("/")
-def home():
-    return "✅ Backend opérationnel"
+def sauvegarder_commentaires(commentaires):
+    with open(COMMENTS_FILE, "w", encoding="utf-8") as f:
+        json.dump(commentaires, f, ensure_ascii=False, indent=2)
 
-@app.route("/register", methods=["POST"])
-def register():
-    data = request.get_json()
-    pseudo = data.get("pseudo")
-    password = data.get("password")
-    if not pseudo or not password:
-        return jsonify({"error": "Champs requis"}), 400
-    if User.query.filter_by(pseudo=pseudo).first():
-        return jsonify({"error": "Pseudo déjà pris"}), 409
-    password_hash = hashlib.sha256(password.encode()).hexdigest()
-    db.session.add(User(pseudo=pseudo, password_hash=password_hash))
-    db.session.commit()
-    return jsonify({"message": "Compte créé"}), 201
+@app.route("/comments", methods=["GET", "POST"])
+def comments():
+    commentaires = charger_commentaires()
 
-@app.route("/login", methods=["POST"])
-def login():
-    data = request.get_json()
-    pseudo = data.get("pseudo")
-    password = data.get("password")
-    user = User.query.filter_by(pseudo=pseudo).first()
-    if not user:
-        return jsonify({"error": "Utilisateur inconnu"}), 404
-    if user.password_hash != hashlib.sha256(password.encode()).hexdigest():
-        return jsonify({"error": "Mot de passe incorrect"}), 401
-    return jsonify({"message": "Connexion réussie", "pseudo": pseudo}), 200
+    if request.method == "GET":
+        type_graph = request.args.get("type")
+        gp = request.args.get("gp")
+        cible = request.args.get("cible")
+        filtres = [
+            c for c in commentaires
+            if c["type_graphique"] == type_graph and c["grand_prix"] == gp and str(c["cible"]) == str(cible)
+        ]
+        return jsonify(filtres)
 
-@app.route("/comments", methods=["POST"])
-def add_comment():
-    data = request.get_json()
-    c = Comment(
-        auteur=data.get("auteur"),
-        contenu=data.get("contenu"),
-        timestamp=datetime.utcnow().isoformat(),
-        type_graphique=data.get("type_graphique"),
-        grand_prix=data.get("grand_prix"),
-        cible=data.get("cible")
-    )
-    db.session.add(c)
-    db.session.commit()
-    return jsonify({"message": "Commentaire enregistré"}), 201
-
-@app.route("/comments", methods=["GET"])
-def get_comments():
-    type_graphique = request.args.get("type")
-    grand_prix = request.args.get("gp")
-    cible = request.args.get("cible")
-    q = Comment.query.filter_by(type_graphique=type_graphique, grand_prix=grand_prix)
-    if cible:
-        q = q.filter_by(cible=cible)
-    return jsonify([
-        {"auteur": c.auteur, "contenu": c.contenu, "timestamp": c.timestamp}
-        for c in q.order_by(Comment.timestamp.desc()).all()
-    ])
-
-# 🔁 Fonction spéciale utilisée par Gunicorn sur Render
-def create_app():
-    with app.app_context():
-        db.create_all()
-    return app
+    elif request.method == "POST":
+        data = request.get_json()
+        data["timestamp"] = datetime.utcnow().isoformat()
+        commentaires.append(data)
+        sauvegarder_commentaires(commentaires)
+        return jsonify({"message": "Commentaire enregistré"}), 201
