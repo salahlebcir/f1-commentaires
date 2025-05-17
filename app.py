@@ -7,59 +7,90 @@ Created on Wed May 14 11:47:15 2025
 """
 
 from flask import Flask, request, jsonify
-from flask_cors import CORS
 import json
 import os
 
 app = Flask(__name__)
-CORS(app)
+DATA_FILE = "commentaires.json"
+USERS_FILE = "users.json"
 
-COMMENTS_FILE = "comments.json"
+# Initialiser les fichiers si vides
+if not os.path.exists(DATA_FILE):
+    with open(DATA_FILE, "w") as f:
+        json.dump([], f)
 
-# Charger les commentaires depuis le fichier
-def load_comments():
-    if os.path.exists(COMMENTS_FILE):
-        with open(COMMENTS_FILE, "r", encoding="utf-8") as f:
-            try:
-                return json.load(f)
-            except json.JSONDecodeError:
-                return []
-    return []
+if not os.path.exists(USERS_FILE):
+    with open(USERS_FILE, "w") as f:
+        json.dump({}, f)
 
-# Sauvegarder les commentaires dans le fichier
-def save_comments(data):
-    with open(COMMENTS_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+@app.route("/register", methods=["POST"])
+def register():
+    data = request.json
+    pseudo = data.get("pseudo")
+    password = data.get("password")
 
-@app.route("/comments", methods=["GET"])
-def get_comments():
-    type_graphique = request.args.get("type")
-    gp = request.args.get("gp")
-    cible = request.args.get("cible")
-    comments = load_comments()
-    filtres = [
-        c for c in comments
-        if c["type_graphique"] == type_graphique and c["grand_prix"] == gp and str(c["cible"]) == str(cible)
-    ]
-    return jsonify(filtres)
+    if not pseudo or not password:
+        return jsonify({"error": "Champs manquants"}), 400
 
-@app.route("/comments", methods=["POST"])
-def post_comment():
-    try:
-        data = request.get_json()
-        all_comments = load_comments()
-        data["timestamp"] = request.headers.get("Date", "")
-        all_comments.append(data)
-        save_comments(all_comments)
-        return jsonify({"success": True}), 201
-    except Exception as e:
-        return jsonify({"error": str(e)}), 400
+    with open(USERS_FILE, "r+") as f:
+        users = json.load(f)
+        if pseudo in users:
+            return jsonify({"error": "Pseudo déjà pris"}), 400
+        users[pseudo] = password
+        f.seek(0)
+        json.dump(users, f)
+        f.truncate()
 
-@app.route("/")
-def index():
-    return "✅ Backend Flask opérationnel"
+    return jsonify({"message": "Inscription réussie"}), 201
+
+@app.route("/login", methods=["POST"])
+def login():
+    data = request.json
+    pseudo = data.get("pseudo")
+    password = data.get("password")
+
+    with open(USERS_FILE, "r") as f:
+        users = json.load(f)
+        if pseudo not in users or users[pseudo] != password:
+            return jsonify({"error": "Identifiants incorrects"}), 401
+
+    return jsonify({"message": "Connexion réussie"}), 200
+
+@app.route("/comments", methods=["GET", "POST"])
+def comments():
+    if request.method == "GET":
+        type_graphique = request.args.get("type")
+        gp = request.args.get("gp")
+        cible = request.args.get("cible")
+
+        with open(DATA_FILE, "r") as f:
+            commentaires = json.load(f)
+
+        filtres = [
+            c for c in commentaires
+            if c["type_graphique"] == type_graphique and
+               c["grand_prix"] == gp and
+               str(c["cible"]) == str(cible)
+        ]
+        return jsonify(filtres)
+
+    if request.method == "POST":
+        data = request.json
+        data["timestamp"] = time_now()
+        with open(DATA_FILE, "r+") as f:
+            commentaires = json.load(f)
+            commentaires.append(data)
+            f.seek(0)
+            json.dump(commentaires, f, indent=2)
+            f.truncate()
+        return jsonify({"message": "Commentaire ajouté"}), 201
+
+# Fonction utilitaire pour l'heure
+from datetime import datetime
+def time_now():
+    return datetime.utcnow().isoformat()
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=5000)
 
 
