@@ -55,5 +55,11 @@ def post_comment():
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
+@app.route("/")
+def index():
+    return "✅ Backend Flask opérationnel"
+
 if __name__ == "__main__":
     app.run(debug=True)
+
+
